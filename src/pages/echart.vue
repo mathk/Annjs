@@ -1,5 +1,8 @@
 <template>
     <v-container grid-list-md fluid text-xs-center>
+        <set-edge-node v-model="showAddInput" type="in" />
+        <set-edge-node v-model="showAddOutput" type="out" />
+        <set-layer-node v-model="showSetLayer" />
         <v-snackbar
             v-model="notificationEnable" top>
             {{ notificationText }}
@@ -7,37 +10,18 @@
         </v-snackbar>
         <v-layout row wrap>
             <v-flex xs8>
-                <v-card ref="form">
-                    <v-toolbar color="red lighten-1">
+                <v-card ref="form" :height="'600px'" >
+                    <v-toolbar color="gray">
                         <v-icon>mdi-chart-bubble</v-icon>
                     </v-toolbar>
                     <v-container fluid class="px-3">
-                        <chart :options="options" :watch-shallow="false"></chart>
+                        <chart ref="chart" :autoResize="true" :options="options" :watch-shallow="false"></chart>
                     </v-container>
                 </v-card>
             </v-flex>
             <v-flex xs4>
-                <v-card ref="form">
-                    <v-toolbar color="red lighten-1">
-                        <v-icon>fa-keyboard-o</v-icon>
-                    </v-toolbar>
-                    <v-container fluid class="px-3">
-                        <v-layout row wrap>
-                            <v-flex
-                                xs12
-                                v-for="node in inputNodes"
-                                :key="node.id">
-                                <v-text-field
-                                    :label="'Input for id ' + node.id"
-                                    v-model.number="inputValues[node.id]"
-                                ></v-text-field>
-                            </v-flex>
-                        </v-layout>
-                    </v-container>
-                    <v-card-actions>
-                        <v-btn @click="updateInput" color="red lighten-3">Update</v-btn>
-                    </v-card-actions>
-                </v-card>
+                <raw-input @input="runNetwork" :nodes="$store.state.input" class="mb-3" />
+                <raw-input @input="setTarget" :nodes="$store.state.output" kind="Target" />
             </v-flex>
         </v-layout>
     </v-container>
@@ -46,20 +30,28 @@
 <script>
 import 'echarts';
 import 'mdi/css/materialdesignicons.min.css';
-import eyeSlashIcon from '!raw-loader!../assets/raw-icon/eye-slash';
-import eyeIcon from '!raw-loader!../assets/raw-icon/eye';
-import eyeSolidSlashIcon from '!raw-loader!../assets/raw-icon/eye-slash-solid';
-import eyeSolidIcon from '!raw-loader!../assets/raw-icon/eye-solid';
-import plusCircle from '!raw-loader!../assets/raw-icon/plus-circle';
-import plusSquare from '!raw-loader!../assets/raw-icon/plus-square';
+import SetEdgeNode from '@/components/SetEdgeNode.vue';
+import RawInput from '@/components/RawInput.vue';
+import SetLayerNode from '@/components/SetLayerNodes.vue';
+import eyeSlashIcon from '@/assets/raw-icon/eye-slash';
+import eyeIcon from '@/assets/raw-icon/eye';
+import eyeSolidSlashIcon from '@/assets/raw-icon/eye-slash-solid';
+import eyeSolidIcon from '@/assets/raw-icon/eye-solid';
+import plusCircle from '@/assets/raw-icon/plus-circle';
+import plusSquare from '@/assets/raw-icon/plus-square';
+import randomIcon from '@/assets/raw-icon/random';
 import ECharts from 'vue-echarts/components/ECharts';
 import _ from 'lodash';
+import Color from 'color';
 
 export default {
     data () {
         return {
             showEdgeLabel: true,
-            inputValues: {},
+            showNodeLabel: true,
+            showAddOutput: false,
+            showAddInput: false,
+            showSetLayer: false,
             notificationText: '',
             notificationEnable: false
         };
@@ -72,6 +64,18 @@ export default {
             return this.$store.getters.layersIds.length;
         },
         options () {
+            let makeIconStyle = (color) => {
+                return {
+                    normal: {
+                        color: color.rgb().toString(),
+                        borderWidth: 0
+                    },
+                    emphasis: {
+                        color: color.darken(0.3).saturate(0.3).rgb().toString(),
+                        borderWidth: 0
+                    }
+                };
+            };
             return {
                 renderer: 'svg',
                 xAxis: {
@@ -93,41 +97,39 @@ export default {
                     right: '20%',
                     itemSize: 25,
                     itemGap: 15,
-                    iconStyle: {
-                        normal: {
-                            color: '#ef9a9a',
-                            borderWidth: 0
-                        },
-                        emphasis: {
-                            color: 'red',
-                            borderWidth: 0
-                        }
-                    },
+                    iconStyle: makeIconStyle(Color.rgb(120, 120, 235)),
                     feature: {
                         myAddInputNode: {
                             show: true,
-                            title: 'Add Input',
+                            title: 'Set Input',
                             icon: plusSquare,
+                            iconStyle: makeIconStyle(Color.rgb(50, 230, 85)),
                             onclick: () => {
-                                this.notificationText = 'ADD INPUT';
-                                this.notificationEnable = true;
+                                this.showAddInput = true;
                             }
                         },
-                        myAddNode: {
+                        mySetLayer: {
                             show: true,
-                            title: 'Add node',
+                            title: 'Set Layer',
                             icon: plusCircle,
                             onclick: () => {
-                                this.$store.commit('addInuptNode', {weights: [1, 2], id: 'test1'});
-                                this.notificationText = 'TEST';
-                                this.$store.commit('addNode', {layerId: 0, bias: 0.5, inputWeight: [1, 2, 3], outputWeight: [2, 3, 4]});
-                                this.notificationEnable = true;
+                                this.showSetLayer = true;
+                            }
+                        },
+                        mySetOutNode: {
+                            show: true,
+                            title: 'Set Output',
+                            icon: plusSquare,
+                            iconStyle: makeIconStyle(Color.rgb(50, 230, 235)),
+                            onclick: () => {
+                                this.showAddOutput = true;
                             }
                         },
                         myShowEdgeLabel: {
                             show: true,
                             title: 'Show Edge Label',
                             icon: this.showEdgeLabel ? eyeSlashIcon : eyeIcon,
+                            iconStyle: makeIconStyle(Color.rgb(250, 100, 155)),
                             onclick: () => {
                                 this.showEdgeLabel = !this.showEdgeLabel;
                             }
@@ -135,8 +137,19 @@ export default {
                         myShowNodeLabel: {
                             show: true,
                             title: 'Show Node Label',
-                            icon: this.showEdgeLabel ? eyeSolidSlashIcon : eyeSolidIcon,
+                            icon: this.showNodeLabel ? eyeSolidSlashIcon : eyeSolidIcon,
+                            iconStyle: makeIconStyle(Color.rgb(250, 100, 100)),
                             onclick: () => {
+                                this.showNodeLabel = !this.showNodeLabel;
+                            }
+                        },
+                        myRandomNet: {
+                            show: true,
+                            title: 'Randomize Weight and Bias',
+                            icon: randomIcon,
+                            iconStyle: makeIconStyle(Color.rgb(200, 200, 200)),
+                            onclick: () => {
+                                this.$store.commit('random');
                             }
                         }
                     }
@@ -146,6 +159,7 @@ export default {
                         type: 'slider',
                         show: true,
                         xAxisIndex: [0],
+                        filterMode: 'none',
                         start: 0,
                         end: 100
                     },
@@ -153,6 +167,7 @@ export default {
                         type: 'slider',
                         show: true,
                         yAxisIndex: [0],
+                        filterMode: 'none',
                         left: '93%',
                         start: 0,
                         end: 100
@@ -161,12 +176,13 @@ export default {
                 series: [
                     {
                         type: 'graph',
+                        width: 660,
                         draggable: true,
                         coordinateSystem: 'cartesian2d',
                         symbolSize: 40,
                         label: {
                             normal: {
-                                show: true
+                                show: this.showNodeLabel
                             }
                         },
                         edgeLabel: {
@@ -193,16 +209,20 @@ export default {
                 ]
             };
         },
-        inputNodes () {
-            return _.filter(this.nodes, {type: 'in'});
-        },
         nodes () {
-            return _.map(this.$store.getters.nodes, (node) => {
+            let skip = {};
+            return _.filter(_.map(this.$store.getters.nodes, (node) => {
+                if (this.$store.getters.layerSize(node.layer) > 50) {
+                    skip[node.layer] = skip.hasOwnProperty(node.layer) ? skip[node.layer] + 1 : 0;
+                }
+                if (skip[node.layer] && (skip[node.layer] % (this.$store.getters.layerSize(node.layer) / 5).toFixed()) !== 0) {
+                    return false;
+                }
                 if (node.type !== 'inner') {
                     return this.graphEdgeNode(node);
                 }
                 return this.graphNode(node);
-            });
+            }));
         },
         edges () {
             return this.$store.getters.edges;
@@ -221,35 +241,30 @@ export default {
         }
     },
     components: {
+        RawInput,
+        SetEdgeNode,
+        SetLayerNode,
         chart: ECharts
     },
-    watch: {
-        inputNodes () {
-            this.bindInput();
-        }
-    },
     mounted () {
-        this.bindInput();
+        this.$refs.chart.resize({width: 680, height: 500});
     },
     methods: {
-        updateInput () {
-            this.$store.dispatch('run', this.inputValues);
-        },
-        bindInput () {
-            this.inputValues = {};
-            _.each(this.inputNodes, ({id}) => {
-                this.$set(this.inputValues, id, null);
-            });
-        },
         coord ({row, layer, info}) {
             var nodesLength = this.$store.getters.layerSize(layer);
             return [layer, ((this.maxy - this.miny) / (nodesLength + 1)) * (row + 1) + this.miny];
         },
         graphEdgeNode (node) {
-            return { id: node.id, name: node.info, symbol: 'rect', value: this.coord(node), type: node.type };
+            return { id: node.id, name: node.info, symbolSize: 10, symbol: 'rect', value: this.coord(node), type: node.type };
         },
         graphNode (node) {
-            return { id: node.id, name: node.bias, value: this.coord(node), type: node.type };
+            return { id: node.id, name: node.info, value: this.coord(node), type: node.type };
+        },
+        runNetwork (values) {
+            this.$store.dispatch('run', values);
+        },
+        setTarget (values) {
+            this.$store.commit('setTarget', values);
         }
     }
 };

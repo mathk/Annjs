@@ -26,16 +26,18 @@ export default new Vuex.Store({
         ]
     },
     getters: {
-        inputVector (state) {
-            return new Matrix(_.map(state.input, ({value}) => {
-                return [value];
-            }));
+        sqrError (state) {
+            let output = _.map(state.output, 'value');
+            if (state.target && _.every(output, Number.isFinite)) {
+                return _.sum(_.zipWith(output, state.target, (o, t) => Math.pow(o - t, 2)));
+            }
+            return 0;
         },
         compute (state) {
             return (input) => {
-                return state.layers.reduce((inL, l) => {
-                    return l.weight.dot(inL).plus(l.bias).sigmoid();
-                }, input).data;
+                return state.layers.reduce(([inL, ...rest], l) => {
+                    return [l.weight.dot(inL).plus(l.bias).sigmoid(), inL, ...rest];
+                }, [input]).reverse();
             };
         },
         getNode (state, getters) {
@@ -65,9 +67,13 @@ export default new Vuex.Store({
             return _.range(0, state.layers.length - 1);
         },
         nodes (state) {
-            return _.concat(state.input, state.output, _.flatMapDeep(state.layers, (l, li) => {
-                return _.map(l.bias.data, ([ bias ], ri) => {
-                    return {id: 'innerL' + li + 'R' + ri, row: ri, layer: li, bias, type: 'inner', info: bias};
+            return _.concat(state.input, state.output, _.flatMapDeep(state.layers, (l, layer) => {
+                return _.map(l.bias.data, ([ bias ], row) => {
+                    let info = bias.toFixed(2);
+                    if (l.values && l.values[row]) {
+                        info += '\nout: ' + l.values[row].toFixed(2);
+                    }
+                    return {id: 'innerL' + layer + 'R' + row, row, layer, bias, type: 'inner', info};
                 });
             }));
         },
@@ -89,76 +95,90 @@ export default new Vuex.Store({
         }
     },
     mutations: {
-        addInuptNode (state, {weights, id}) {
-            if (_.find(state.input, {id})) {
-                throw new Error('Id is already taken.');
-            }
-            var matx = state.layers[0].weight;
-            if (weights.length !== matx.rows) {
-                throw new Error('Weights length does not correspond to the first layers. Need: ' + matx.row + ' values');
-            }
-            var newData = matx.data;
-            _.each(newData, (row, id) => {
-                row.push(weights[id]);
-            });
-
+        setInputNodes (state, count) {
+            let newData = _.times(state.layers[0].weight.rows, () => _.times(count, Math.random));
             state.layers[0].weight = new Matrix(newData);
-            state.input.push({id, row: state.input.length, layer: -1, type: 'in', info: id});
+
+            state.input = _.times(count, (id) => {
+                return {id: 'in' + id, row: id, layer: -1, type: 'in', info: 'in' + id};
+            });
         },
-        addNode (state, {inputWeight, bias, outputWeight, layerId}) {
-            if (outputWeight && outputWeight.length > 0 && layerId === state.layers.length - 1) {
-                throw new Error('output weight must not be set for the output layer.');
-            }
-            if (layerId < 0 || layerId >= state.layers.length) {
-                throw new Error('Layers id is not in range.');
+        setLayer (state, {count, layer}) {
+            if (!state.layers[layer]) {
+                throw new Error('Layer does not exist');
             }
 
-            var currentLayer = state.layers[layerId];
-            if (inputWeight.length !== currentLayer.weight.cols) {
-                throw new Error('input weight length should match the node previous node length.');
-            }
-            var newWeight = currentLayer.weight.data;
-            newWeight.push(inputWeight);
-            var newBias = currentLayer.bias.data;
-            newBias.push([bias]);
-            currentLayer.weight = new Matrix(newWeight);
-            currentLayer.bias = new Matrix(newBias);
-            if (outputWeight.length > 0) {
-                var nextLayer = state.layers[layerId + 1];
-                if (nextLayer.weight.rows !== outputWeight.length) {
-                    throw new Error('output weight does not meet the next layer node.');
-                }
-                var newData = nextLayer.weight.data;
-                _.each(newData, (row, id) => {
-                    row.push(outputWeight[id]);
+            let newWeight = _.times(count, () => _.times(state.layers[layer].weight.cols, Math.random));
+            let newBias = _.times(count, Math.random);
+
+            state.layers.splice(layer, 1, {
+                weight: new Matrix(newWeight),
+                bias: Matrix.reshapeFrom(newBias, count, 1)
+            });
+            let nextLayer = state.layers[layer + 1];
+            if (nextLayer) {
+                let newNextWeight = _.times(nextLayer.weight.rows, () => _.times(count, Math.random));
+                state.layers.splice(layer + 1, 1, {
+                    weight: new Matrix(newNextWeight),
+                    bias: nextLayer.bias
                 });
-                nextLayer.weight = new Matrix(newData);
             }
         },
-        inputs (state, input) {
-            _.each(input, (value, id) => {
-                var node = _.find(state.input, {id});
+        setOutputNodes (state, count) {
+            let last = _.last(state.layers);
+            let newWeight = _.times(count, () => _.times(last.weight.cols, Math.random));
+            let newBias = _.times(count, Math.random);
+            state.layers.splice(state.layers.length - 1, 1, {
+                weight: new Matrix(newWeight),
+                bias: Matrix.reshapeFrom(newBias, count, 1)
+            });
+            state.output = _.times(count, (id) => {
+                return {id: 'out' + id, row: id, layer: state.layers.length, type: 'out', info: 'out' + id};
+            });
+            if (state.target) {
+                delete state.target;
+            }
+        },
+        setEdgeValue (state, {values, type}) {
+            _.each(values, (value, id) => {
+                var node = _.find(type === 'out' ? state.output : state.input, {row: id});
                 if (node) {
-                    Vue.set(node, 'value', value);
-                    node.info = node.id + ': ' + value;
+                    Vue.set(node, 'output', value);
+                    node.info = node.id + ': ' + value.toFixed(2);
                 }
             });
         },
-        outputs (state, output) {
-            _.each(output, (value, id) => {
-                var node = _.find(state.output, {row: id});
-                if (node) {
-                    Vue.set(node, 'value', value[0]);
-                    node.info = node.id + ': ' + value[0].toFixed(2);
-                }
+        setLayerValue (state, {values, layer}) {
+            Vue.set(state.layers[layer], 'values', values);
+        },
+        setTarget (state, values) {
+            console.log(values);
+            if (state.output.length !== values.length) {
+                throw new Error('Target values should be of the same length.');
+            }
+            Vue.set(state, 'target', values);
+        },
+        updateError (state) {
+            if (state.target) {
+            }
+        },
+        random (state) {
+            _.each(state.layers, ({bias, weight}, i) => {
+                state.layers[i].bias = Matrix.reshapeFrom(_.times(bias.rows, () => _.random(0, 1, true)), bias.rows, 1);
+                state.layers[i].weight = Matrix.reshapeFrom(_.times(weight.rows * weight.cols, () => _.random(0, 1, true)), weight.rows, weight.cols);
             });
         }
     },
     actions: {
         run ({getters, commit}, input) {
-            commit('inputs', input);
-            var outVector = getters.compute(getters.inputVector);
-            commit('outputs', outVector);
+            console.log(input);
+            var [inputValues, ...inner] = getters.compute(Matrix.reshapeFrom(input, input.length, 1));
+            commit('setEdgeValue', {values: _.flatten(inputValues.data), type: 'in'});
+            commit('setEdgeValue', {values: _.flatten(_.last(inner).data), type: 'out'});
+            _.each(_.initial(inner), (value, id) => {
+                commit('setLayerValue', {values: _.flatten(value.data), layer: id});
+            });
+            commit('updateError');
         }
     }
 });

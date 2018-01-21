@@ -38,6 +38,11 @@ module.exports = {
         }
       },
       {
+        test: /raw-icon/,
+        loader: 'raw-loader',
+        include: [resolve('src')]
+      },
+      {
         test: /\.vue$/,
         loader: 'vue-loader',
         options: vueLoaderConfig

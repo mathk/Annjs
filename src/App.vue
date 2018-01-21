@@ -32,6 +32,18 @@
             <v-list-tile-title>Echart test</v-list-tile-title>
           </v-list-tile-content>
         </v-list-tile>
+        <v-list-tile
+          value="true"
+          :to="{name: 'image'}"
+          exact
+        >
+          <v-list-tile-action>
+            <v-icon medium light>fa-file-image-o</v-icon>
+          </v-list-tile-action>
+          <v-list-tile-content>
+            <v-list-tile-title>See picture</v-list-tile-title>
+          </v-list-tile-content>
+        </v-list-tile>
       </v-list>
     </v-navigation-drawer>
     <v-toolbar fixed app :clipped-left="clipped">
